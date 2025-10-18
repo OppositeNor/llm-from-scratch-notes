@@ -1,8 +1,9 @@
 import torch
 import tiktoken
 from utils import plot_losses, text_to_token_ids, token_ids_to_text
-from train_utils import calc_loss_loader, train_model_simple
+from train_utils import calc_loss_loader, load_weights_to_gpt, train_model_simple
 from config import GPT_CONFIG_124M
+from gpt_download import download_and_load_gpt2
 from gpt_model import GPTModel, generate, generate_text_simple
 from dataset import create_dataloader_v1
 import matplotlib.pyplot as plt
@@ -167,8 +168,10 @@ with torch.no_grad():
 print("Training loss:", train_loss)
 print("Validation loss:", val_loss)
 
+enable_train = False
+
 # Train the model
-if True:
+if enable_train:
     torch.manual_seed(42)
     model = GPTModel(GPT_CONFIG_124M)
     model.to(device)
@@ -270,13 +273,52 @@ print(new_logits)
 topk_probas = torch.softmax(new_logits, dim=0)
 print(topk_probas)
 
+if enable_train:
+    torch.manual_seed(42)
+    token_ids = generate(
+        model=model,
+        idx=text_to_token_ids("Every effort moves you", tokenizer),
+        max_new_tokens=15,
+        context_size=GPT_CONFIG_124M["context_length"],
+        top_k=25,
+        temperature=1.4
+    )
+    print(token_ids_to_text(token_ids, tokenizer))
+
+
+settings, params = download_and_load_gpt2(
+    model_size="124M", models_dir="gpt2"
+)
+
+# Pretrain from GPT2
+print("Settings:", settings)
+print("Params:", params.keys())
+
+model_configs = {
+    "gpt2-small (124M)": {"emb_dim": 768, "n_layers": 12, "n_heads": 12},
+    "gpt2-medium (355M)": {"emb_dim": 1024, "n_layers": 24, "n_heads": 16},
+    "gpt2-large (774M)": {"emb_dim": 1280, "n_layers": 36, "n_heads": 20},
+    "gpt2-xl (1558M)": {"emb_dim": 1600, "n_layers": 48, "n_heads": 25},
+}
+
+model_name = "gpt2-small (124M)" # Load the gpt2 small model
+NEW_CONFIG = GPT_CONFIG_124M.copy()
+NEW_CONFIG.update(model_configs[model_name])
+NEW_CONFIG.update({"context_length": 1024, "qkv_bias": True})
+
+gpt = GPTModel(NEW_CONFIG)
+gpt.eval()
+load_weights_to_gpt(gpt, params)
+gpt.to(device)
+
 torch.manual_seed(42)
 token_ids = generate(
-    model=model,
-    idx=text_to_token_ids("Every effort moves you", tokenizer),
-    max_new_tokens=15,
-    context_size=GPT_CONFIG_124M["context_length"],
-    top_k=25,
-    temperature=1.4
+    model=gpt,
+    idx=text_to_token_ids("Every effort moves you", tokenizer).to(device),
+    max_new_tokens=25,
+    context_size=NEW_CONFIG["context_length"],
+    top_k=50,
+    temperature=1.5
 )
-print(token_ids_to_text(token_ids, tokenizer))
+
+print("Output text:", token_ids_to_text(token_ids, tokenizer))
