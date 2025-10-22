@@ -1,3 +1,8 @@
 __pycache__
 *.pth
 ch5/gpt2
+ch6/gpt2
+ch6/sms_spam_collection
+ch6/*.csv
+*.zip
+*.pdf
