@@ -18,5 +18,5 @@ GPT_CONFIG_355M = {
     "qkv_bias": True
 }
 
-use_config = GPT_CONFIG_124M
-model_size = "124M"
+use_config = GPT_CONFIG_355M
+model_size = "355M"

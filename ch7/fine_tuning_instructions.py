@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader
 
 from dataset import InstructionDataset, custom_collate
 from train_utils import calc_loss_loader, train_model_simple
-from config import use_config
+from config import use_config, model_size
 from gpt_model import GPTModel, generate
 from utils import format_input, plot_losses, text_to_token_ids, token_ids_to_text
 
@@ -17,9 +17,13 @@ print("Using device:", device)
 tokenizer = tiktoken.get_encoding("gpt2")
 torch.manual_seed(42)
 load_checkpoint = True
-checkpoint_path = "checkpoints/checkpoint_instruction.pth"
-model_output_path = "models/model_instruction.pth"
+checkpoint_path = f"checkpoints/checkpoint_instruction_{model_size}.pth"
+model_output_path = f"models/model_instruction_{model_size}.pth"
+pretrained_model_path = f"models/model_pretrain_{model_size}.pth"
+num_epochs = 30
 
+num_workers = 0
+batch_size = 8
 
 if load_checkpoint and os.path.exists(checkpoint_path):
     model = GPTModel(use_config)
@@ -31,7 +35,7 @@ if load_checkpoint and os.path.exists(checkpoint_path):
     optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
 else:
     model = GPTModel(use_config)
-    model.load_state_dict(torch.load("models/model_pretrain.pth", map_location=device))
+    model.load_state_dict(torch.load(pretrained_model_path, map_location=device))
     model.to(device)
     model.train()
     optimizer = torch.optim.AdamW(model.parameters(), lr=0.00005, weight_decay=0.1)
@@ -54,9 +58,6 @@ print("Validation set size:", len(val_data))
 train_dataset = InstructionDataset(train_data, tokenizer)
 val_dataset = InstructionDataset(val_data, tokenizer)
 test_dataset = InstructionDataset(test_data, tokenizer)
-
-num_workers = 0
-batch_size = 8
 
 custom_collate_fn = partial(custom_collate, device=device, allowed_max_length=use_config["context_length"])
 
@@ -108,7 +109,6 @@ print("Validation loss:", val_loss)
 print("Test loss:", test_loss)
 
 start_time = time.time()
-num_epochs = 7
 
 train_losses, val_losses, tokens_seen = train_model_simple(
     model, train_loader, val_loader, optimizer, device,

@@ -2,13 +2,13 @@ import os
 import torch
 import tiktoken
 from utils import plot_losses
-from config import use_config
+from config import use_config, model_size
 from dataset import create_dataloader_v1
 from gpt_model import GPTModel
 from train_utils import train_model_simple
 
-model_output_path = "models/model_pretrain.pth"
-checkpoint_path = "checkpoints/checkpoint_pretrain.pth"
+model_output_path = f"models/model_pretrain_{model_size}.pth"
+checkpoint_path = f"checkpoints/checkpoint_pretrain_{model_size}.pth"
 load_checkpoint = True
 
 file_path = "the-verdict.txt"

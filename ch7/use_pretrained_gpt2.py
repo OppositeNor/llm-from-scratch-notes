@@ -8,7 +8,7 @@ from utils import text_to_token_ids, token_ids_to_text
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 tokenizer = tiktoken.get_encoding("gpt2")
-model_output_path = "models/model_pretrain.pth"
+model_output_path = f"models/model_pretrain_{model_size}.pth"
 
 settings, params = download_and_load_gpt2(
     model_size=model_size, models_dir="gpt2"

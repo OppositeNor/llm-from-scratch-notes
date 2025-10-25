@@ -1,13 +1,13 @@
 import tiktoken
 import torch
-from config import use_config
+from config import use_config, model_size
 from gpt_model import GPTModel, generate
 from utils import text_to_token_ids, token_ids_to_text
 
 tokenizer = tiktoken.get_encoding("gpt2")
 input_text = "Every effort moves you"
 
-model_path = "models/model_pretrain.pth"
+model_path = f"models/model_pretrain_{model_size}.pth"
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 torch.manual_seed(42)
