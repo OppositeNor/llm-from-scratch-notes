@@ -126,7 +126,7 @@ with torch.no_grad():
     test_loss = calc_loss_loader(test_loader, model, device, num_batches=5)
 
 epochs_tensor = torch.linspace(0, num_epochs, len(train_losses))
-plot_losses(epochs_tensor, tokens_seen, train_losses, val_losses)
+plot_losses(epochs_tensor, tokens_seen, train_losses, val_losses, save_figure=True)
 
 print("Train loss:", train_loss)
 print("Validation loss:", val_loss)
