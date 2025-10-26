@@ -3,6 +3,7 @@ __pycache__
 ch5/gpt2
 ch6/gpt2
 ch7/gpt2
+experiments/gpt2
 ch6/sms_spam_collection
 ch6/*.csv
 *.zip

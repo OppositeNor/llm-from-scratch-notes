@@ -3,3 +3,6 @@ tiktoken
 matplotlib
 tqdm
 tensorflow
+accelerate
+datasets
+tqdm
