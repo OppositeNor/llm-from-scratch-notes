@@ -12,7 +12,16 @@ from config import use_config, model_size
 from gpt_model import GPTModel, generate
 from utils import format_input, plot_losses, text_to_token_ids, token_ids_to_text
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cpu")
+
+if device == torch.device("cpu"):
+    num_cpus = os.cpu_count()
+    if num_cpus is None:
+        print("Failed to get CPU core count.")
+    else:
+        torch.set_num_threads(num_cpus-1)
+        print(f"{num_cpus} CPU cores found, using {num_cpus-1} cores.")
 
 print("Using device:", device)
 tokenizer = tiktoken.get_encoding("gpt2")
@@ -22,10 +31,10 @@ checkpoint_path = f"checkpoints/checkpoint_instruction_{model_size}.pth"
 model_output_path = f"models/model_instruction_{model_size}.pth"
 pretrained_model_path = f"models/model_pretrain_{model_size}.pth"
 dataset_path = "instruction-data.json"
-num_epochs = 30
+num_epochs = 6
 
 num_workers = 0
-batch_size = 2
+batch_size = 8
 
 if load_checkpoint and os.path.exists(checkpoint_path):
     model = GPTModel(use_config)
@@ -45,8 +54,8 @@ def prepare_dataset():
     with open(dataset_path, "r") as f:
         data = json.load(f)
 
-    train_portion = int(len(data) * 0.85)
-    test_portion = int(len(data) * 0.1)
+    train_portion = int(len(data) * 0.80)
+    test_portion = int(len(data) * 0.15)
     val_portion = len(data) - train_portion - test_portion
 
     train_data = data[:train_portion]
@@ -126,7 +135,7 @@ model.train()
 train_losses, val_losses, tokens_seen = train_model_simple(
     model, train_loader, val_loader, optimizer, device,
     num_epochs=num_epochs,
-    eval_freq=10,
+    eval_freq=50,
     eval_iter=5,
     start_context=format_input(val_data[0]),
     tokenizer=tokenizer,
@@ -142,7 +151,6 @@ with torch.no_grad():
     test_loss = calc_loss_loader(test_loader, model, device, num_batches=5)
 
 epochs_tensor = torch.linspace(0, num_epochs, len(train_losses))
-plot_losses(epochs_tensor, tokens_seen, train_losses, val_losses, save_figure=True)
 
 print("Train loss:", train_loss)
 print("Validation loss:", val_loss)
@@ -150,7 +158,13 @@ print("Test loss:", test_loss)
 
 torch.save(model.state_dict(), model_output_path)
 
+print("Model saved:", model_output_path)
+
 torch.save({
     "model_state_dict": model.state_dict(),
     "optimizer_state_dict": optimizer.state_dict()
 }, checkpoint_path)
+
+print("Checkpoint saved:", checkpoint_path)
+
+plot_losses(epochs_tensor, tokens_seen, train_losses, val_losses, save_figure=True)

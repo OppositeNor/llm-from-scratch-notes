@@ -5,7 +5,7 @@ from accelerate.utils import tqdm
 from datasets import load_dataset
 import random
 
-dataset_drop_rate = 0.8
+dataset_drop_rate = 0.99
 
 def download_and_load_file(file_path, url):
     if not os.path.exists(file_path):
@@ -28,10 +28,10 @@ def download_and_load_file(file_path, url):
     split_point = int(dataset_drop_rate * len(data))
     print(f"Dropping {split_point}")
     random.shuffle(data)
-    data = data[dataset_drop_rate:]
+    data = data[split_point:]
     print("Writing dataset to json file...")
     with open(file_path, "w", encoding="utf-8") as file:
-        json.dump(data, file)
+        json.dump(data, file, indent=4)
     return data
 
 file_path = "instruction-data.json"

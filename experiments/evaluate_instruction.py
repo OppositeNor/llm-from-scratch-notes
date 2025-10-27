@@ -8,6 +8,7 @@ tokenizer = tiktoken.get_encoding("gpt2")
 
 model_path = f"models/model_instruction_{model_size}.pth"
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+max_token = 1024
 
 torch.manual_seed(42)
 
@@ -28,7 +29,7 @@ entry = input + response
 
 result = entry
 
-while True:
+for _ in range(max_token):
     with torch.no_grad():
         with torch.autocast(device_type=str(device)):
             token = token_ids_to_text(generate(
@@ -38,7 +39,7 @@ while True:
                 context_size=use_config["context_length"]
             ), tokenizer)
             if "<|endoftext|>" in token:
-                print(result[len(entry):])
                 break
             result = token
 
+print(result[len(entry):])
