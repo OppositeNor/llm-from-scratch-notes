@@ -4,6 +4,7 @@ import os
 import time
 import tiktoken
 import torch
+import shutil
 from torch.utils.data import DataLoader
 
 from dataset import InstructionDataset, custom_collate
@@ -33,7 +34,7 @@ pretrained_model_path = f"models/model_pretrain_{model_size}.pth"
 dataset_path = "instruction-data.json"
 num_epochs = 6
 
-num_workers = 4
+num_workers = 0
 batch_size = 8
 
 if load_checkpoint and os.path.exists(checkpoint_path):
@@ -171,3 +172,6 @@ torch.save({
 print("Checkpoint saved:", checkpoint_path)
 
 plot_losses(epochs_tensor, tokens_seen, train_losses, val_losses, save_figure=True)
+
+shutil.copy(checkpoint_path, "/context/drive/MyDrive/")
+print("Checkpoint saved to google drive.")
