@@ -7,13 +7,13 @@ import torch
 from torch.utils.data import DataLoader
 
 from dataset import InstructionDataset, custom_collate
-from train_utils import calc_loss_loader, train_model_simple
+from train_utils import calc_loss_loader, train_model_autocast
 from config import use_config, model_size
 from gpt_model import GPTModel, generate
 from utils import format_input, plot_losses, text_to_token_ids, token_ids_to_text
 
-# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-device = torch.device("cpu")
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# device = torch.device("cpu")
 
 if device == torch.device("cpu"):
     num_cpus = os.cpu_count()
@@ -132,13 +132,16 @@ start_time = time.time()
 
 model.train()
 
-train_losses, val_losses, tokens_seen = train_model_simple(
+scaler = torch.GradScaler()
+
+train_losses, val_losses, tokens_seen = train_model_autocast(
     model, train_loader, val_loader, optimizer, device,
     num_epochs=num_epochs,
     eval_freq=50,
     eval_iter=5,
     start_context=format_input(val_data[0]),
     tokenizer=tokenizer,
+    scaler=scaler,
 )
 
 end_time = time.time()
