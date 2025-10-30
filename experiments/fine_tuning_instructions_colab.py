@@ -1,4 +1,5 @@
 from functools import partial
+import datetime
 import json
 import os
 import time
@@ -173,5 +174,6 @@ print("Checkpoint saved:", checkpoint_path)
 
 plot_losses(epochs_tensor, tokens_seen, train_losses, val_losses, save_figure=True)
 
-shutil.copy(checkpoint_path, "/context/drive/MyDrive/")
+shutil.copy(checkpoint_path, "/content/drive/MyDrive/")
+shutil.copy("loss-plot.pdf", f"/content/drive/MyDrive/loss-plot-{datetime.datetime.now()}-{model_size}.pdf")
 print("Checkpoint saved to google drive.")
