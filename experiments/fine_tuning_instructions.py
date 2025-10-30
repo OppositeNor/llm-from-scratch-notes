@@ -7,7 +7,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from dataset import InstructionDataset, custom_collate
-from train_utils import calc_loss_loader, train_model_autocast
+from train_utils import calc_loss_loader, train_model_simple
 from config import use_config, model_size
 from gpt_model import GPTModel, generate
 from utils import format_input, plot_losses, text_to_token_ids, token_ids_to_text
@@ -132,16 +132,13 @@ start_time = time.time()
 
 model.train()
 
-scaler = torch.GradScaler()
-
-train_losses, val_losses, tokens_seen = train_model_autocast(
+train_losses, val_losses, tokens_seen = train_model_simple(
     model, train_loader, val_loader, optimizer, device,
     num_epochs=num_epochs,
     eval_freq=50,
     eval_iter=5,
     start_context=format_input(val_data[0]),
     tokenizer=tokenizer,
-    scaler=scaler,
 )
 
 end_time = time.time()
