@@ -37,17 +37,16 @@ num_workers = 4
 batch_size = 8
 
 if load_checkpoint and os.path.exists(checkpoint_path):
-    model = GPTModel(use_config)
+    model = GPTModel(use_config).to(device)
     checkpoint = torch.load(checkpoint_path, map_location=device)
     model.load_state_dict(checkpoint["model"])
-    model.to(device)
+
     optimizer = torch.optim.AdamW(model.parameters(), lr=0.00005, weight_decay=0.1)
     optimizer.load_state_dict(checkpoint["optimizer"])
     print("Checkpoint loaded:", checkpoint_path)
 else:
-    model = GPTModel(use_config)
+    model = GPTModel(use_config).to(device)
     model.load_state_dict(torch.load(pretrained_model_path, map_location=device))
-    model.to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=0.00005, weight_decay=0.1)
 
 def prepare_dataset():
