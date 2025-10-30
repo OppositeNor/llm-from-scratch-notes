@@ -32,15 +32,14 @@ result = entry
 
 for _ in range(max_token):
     with torch.no_grad():
-        with torch.autocast(device_type=str(device)):
-            token = token_ids_to_text(generate(
-                model=model,
-                idx=text_to_token_ids(result, tokenizer).to(device),
-                max_new_tokens=1,
-                context_size=use_config["context_length"]
-            ), tokenizer)
-            if "<|endoftext|>" in token:
-                break
-            result = token
+        token = token_ids_to_text(generate(
+            model=model,
+            idx=text_to_token_ids(result, tokenizer).to(device),
+            max_new_tokens=1,
+            context_size=use_config["context_length"]
+        ), tokenizer)
+        if "<|endoftext|>" in token:
+            break
+        result = token
 
 print(result[len(entry):])

@@ -12,8 +12,8 @@ from config import use_config, model_size
 from gpt_model import GPTModel, generate
 from utils import format_input, plot_losses, text_to_token_ids, token_ids_to_text
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-# device = torch.device("cpu")
+# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cpu")
 
 if device == torch.device("cpu"):
     num_cpus = os.cpu_count()
@@ -39,10 +39,10 @@ batch_size = 8
 if load_checkpoint and os.path.exists(checkpoint_path):
     model = GPTModel(use_config)
     checkpoint = torch.load(checkpoint_path, map_location=device)
-    model.load_state_dict(checkpoint["model_state_dict"])
+    model.load_state_dict(checkpoint["model"])
     model.to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=0.00005, weight_decay=0.1)
-    optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+    optimizer.load_state_dict(checkpoint["optimizer"])
     print("Checkpoint loaded:", checkpoint_path)
 else:
     model = GPTModel(use_config)
@@ -161,8 +161,8 @@ torch.save(model.state_dict(), model_output_path)
 print("Model saved:", model_output_path)
 
 torch.save({
-    "model_state_dict": model.state_dict(),
-    "optimizer_state_dict": optimizer.state_dict()
+    "model": model.state_dict(),
+    "optimizer": optimizer.state_dict()
 }, checkpoint_path)
 
 print("Checkpoint saved:", checkpoint_path)
