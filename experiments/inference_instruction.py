@@ -8,6 +8,7 @@ tokenizer = tiktoken.get_encoding("gpt2")
 
 model_path = f"models/model_instruction_{model_size}.pth"
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print("Using device:", device)
 max_token = 1024
 
 torch.manual_seed(42)

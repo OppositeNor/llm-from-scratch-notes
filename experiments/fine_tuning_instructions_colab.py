@@ -41,16 +41,20 @@ batch_size = 8
 if load_checkpoint and os.path.exists(checkpoint_path):
     model = GPTModel(use_config)
     checkpoint = torch.load(checkpoint_path, map_location=device)
-    model.load_state_dict(checkpoint["model_state_dict"])
+    model.load_state_dict(checkpoint["model"])
     model.to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=0.00005, weight_decay=0.1)
-    optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+    optimizer.load_state_dict(checkpoint["optimizer"])
+    scaler = torch.GradScaler()
+    scaler.load_state_dict(checkpoint["scaler"])
     print("Checkpoint loaded:", checkpoint_path)
+    del checkpoint
 else:
     model = GPTModel(use_config)
     model.load_state_dict(torch.load(pretrained_model_path, map_location=device))
     model.to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=0.00005, weight_decay=0.1)
+    scaler = torch.GradScaler()
 
 def prepare_dataset():
     with open(dataset_path, "r") as f:
@@ -134,8 +138,6 @@ start_time = time.time()
 
 model.train()
 
-scaler = torch.GradScaler()
-
 train_losses, val_losses, tokens_seen = train_model_autocast(
     model, train_loader, val_loader, optimizer, device,
     num_epochs=num_epochs,
@@ -166,8 +168,9 @@ torch.save(model.state_dict(), model_output_path)
 print("Model saved:", model_output_path)
 
 torch.save({
-    "model_state_dict": model.state_dict(),
-    "optimizer_state_dict": optimizer.state_dict()
+    "model": model.state_dict(),
+    "optimizer": optimizer.state_dict(),
+    'scaler': scaler.state_dict(),
 }, checkpoint_path)
 
 print("Checkpoint saved:", checkpoint_path)
