@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+import torch.nn.functional as F
 
 class SelfAttentionV1(nn.Module):
     def __init__(self, d_in, d_out):
@@ -96,36 +97,24 @@ class MultiHeadAttention(nn.Module):
         )
 
     def forward(self, x):
-        b, num_tokens, _  = x.shape
+        b, num_tokens, _ = x.shape
         keys = self.W_key(x)
         queries = self.W_query(x)
         values = self.W_value(x)
 
-        # Split the matricies by adding a num_heads dimension. Then unroll the last dimension.
-        # (b, num_tokens, d_out) -> (b, num_tokens, num_heads, head_dim)
-        keys = keys.view(b, num_tokens, self.num_heads, self.head_dim)
-        queries = queries.view(b, num_tokens, self.num_heads, self.head_dim)
-        values = values.view(b, num_tokens, self.num_heads, self.head_dim)
+        # (b, num_tokens, d_out) -> (b, num_heads, num_tokens, head_dim)
+        keys = keys.view(b, num_tokens, self.num_heads, self.head_dim).transpose(1, 2)
+        queries = queries.view(b, num_tokens, self.num_heads, self.head_dim).transpose(1, 2)
+        values = values.view(b, num_tokens, self.num_heads, self.head_dim).transpose(1, 2)
 
-        # Transpose to put heads in a lower dimension order
-        # (b, num_tokens, num_heads, head_dim) -> (b, num_heads, num_tokens, head_dim)
-        keys = keys.transpose(1, 2)
-        queries = queries.transpose(1, 2)
-        values = values.transpose(1, 2)
-
-        attn_scores = queries @ keys.transpose(2, 3)
-
-        mask_bool = self.mask.bool()[:num_tokens, :num_tokens]
-        attn_scores.masked_fill_(mask_bool, -torch.inf)
-
-        attn_weights = torch.softmax(attn_scores / keys.shape[-1]**0.5, dim=-1)
-        attn_weights = self.dropout(attn_weights)
-
-        context_vec = (attn_weights @ values).transpose(1, 2)
-
-        context_vec = context_vec.contiguous().view(
-            b, num_tokens, self.d_out
+        # Uses FlashAttention / memory-efficient attention when available
+        context_vec = F.scaled_dot_product_attention(
+            queries, keys, values,
+            dropout_p=self.dropout.p if self.training else 0.0,
+            is_causal=True
         )
+
+        context_vec = context_vec.transpose(1, 2).contiguous().view(b, num_tokens, self.d_out)
         context_vec = self.out_proj(context_vec)
         return context_vec
 

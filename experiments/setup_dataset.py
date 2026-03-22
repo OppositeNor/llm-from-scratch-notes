@@ -5,7 +5,7 @@ from accelerate.utils import tqdm
 from datasets import load_dataset
 import random
 
-dataset_drop_rate = 0.99
+dataset_drop_rate = 0.8
 
 def download_and_load_file(file_path, url):
     if not os.path.exists(file_path):

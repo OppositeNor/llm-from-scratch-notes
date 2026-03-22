@@ -11,7 +11,7 @@ def token_ids_to_text(token_ids, tokenizer):
     flat = token_ids.squeeze(0)
     return tokenizer.decode(flat.tolist())
 
-def plot_losses(epoch_seen, tokens_seen, train_losses, val_losses, save_figure=False):
+def plot_losses(epoch_seen, tokens_seen, train_losses, val_losses, save_figure=False, show=True):
     fig, ax1 = plt.subplots(figsize=(5, 3))
     ax1.plot(epoch_seen, train_losses, label="Train loss")
     ax1.plot(epoch_seen, val_losses, linestyle="-.", label="Validation loss")
@@ -25,7 +25,8 @@ def plot_losses(epoch_seen, tokens_seen, train_losses, val_losses, save_figure=F
     fig.tight_layout()
     if save_figure:
         plt.savefig("loss-plot.pdf")
-    plt.show()
+    if show:
+        plt.show()
 
 def plot_values(epoch_seen, examples_seen, train_values, val_values, label="loss", save_figure=False):
     fig, ax1 = plt.subplots(figsize=(5, 3))

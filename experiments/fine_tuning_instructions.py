@@ -7,13 +7,17 @@ import torch
 from torch.utils.data import DataLoader
 
 from dataset import InstructionDataset, custom_collate
-from train_utils import calc_loss_loader, train_model_simple
+from train_utils import calc_loss_loader, train_model_autocast
 from config import use_config, model_size
 from gpt_model import GPTModel, generate
 from utils import format_input, plot_losses, text_to_token_ids, token_ids_to_text
 
-# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-device = torch.device("cpu")
+abspath = os.path.abspath(__file__)
+dname = os.path.dirname(abspath)
+os.chdir(dname)
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# device = torch.device("cpu")
 
 if device == torch.device("cpu"):
     num_cpus = os.cpu_count()
@@ -31,10 +35,11 @@ checkpoint_path = f"checkpoints/checkpoint_instruction_{model_size}.pth"
 model_output_path = f"models/model_instruction_{model_size}.pth"
 pretrained_model_path = f"models/model_pretrain_{model_size}.pth"
 dataset_path = "instruction-data.json"
-num_epochs = 6
+num_epochs = 3
 
-num_workers = 4
+num_workers = 0
 batch_size = 8
+pin_memory = device.type == "cuda"
 
 if load_checkpoint and os.path.exists(checkpoint_path):
     model = GPTModel(use_config).to(device)
@@ -43,11 +48,15 @@ if load_checkpoint and os.path.exists(checkpoint_path):
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=0.00005, weight_decay=0.1)
     optimizer.load_state_dict(checkpoint["optimizer"])
+    scaler = torch.GradScaler()
+    if "scaler" in checkpoint:
+        scaler.load_state_dict(checkpoint["scaler"])
     print("Checkpoint loaded:", checkpoint_path)
 else:
     model = GPTModel(use_config).to(device)
     model.load_state_dict(torch.load(pretrained_model_path, map_location=device))
     optimizer = torch.optim.AdamW(model.parameters(), lr=0.00005, weight_decay=0.1)
+    scaler = torch.GradScaler()
 
 def prepare_dataset():
     with open(dataset_path, "r") as f:
@@ -74,7 +83,7 @@ def prepare_dataset():
 def prepare_dataloaders():
     print(f"Loading dataset {dataset_path}...")
     train_dataset, val_dataset, test_dataset, val_data = prepare_dataset()
-    custom_collate_fn = partial(custom_collate, device=device, allowed_max_length=use_config["context_length"])
+    custom_collate_fn = partial(custom_collate, allowed_max_length=use_config["context_length"])
 
     print("Preparing dataloaders...")
     train_loader = DataLoader(
@@ -83,7 +92,9 @@ def prepare_dataloaders():
         collate_fn=custom_collate_fn,
         shuffle=True,
         drop_last=True,
-        num_workers=num_workers
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        persistent_workers=num_workers > 0,
     )
 
     val_loader = DataLoader(
@@ -92,7 +103,9 @@ def prepare_dataloaders():
         collate_fn=custom_collate_fn,
         shuffle=False,
         drop_last=False,
-        num_workers=num_workers
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        persistent_workers=num_workers > 0,
     )
 
     test_loader = DataLoader(
@@ -101,69 +114,92 @@ def prepare_dataloaders():
         collate_fn=custom_collate_fn,
         shuffle=False,
         drop_last=False,
-        num_workers=num_workers
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        persistent_workers=num_workers > 0,
     )
     return train_loader, val_loader, test_loader, val_data
 
-train_loader, val_loader, test_loader, val_data = prepare_dataloaders()
+if __name__ == "__main__":
+    train_loader, val_loader, test_loader, val_data = prepare_dataloaders()
 
-input_text = format_input(val_data[0])
-print(input_text)
-token_ids = generate(
-    model=model,
-    idx=text_to_token_ids(input_text, tokenizer).to(device),
-    max_new_tokens=35,
-    context_size=use_config["context_length"],
-    eos_id=50256
-)
-print(token_ids_to_text(token_ids, tokenizer)[len(input_text):])
+    input_text = format_input(val_data[0])
+    print(input_text)
+    token_ids = generate(
+        model=model,
+        idx=text_to_token_ids(input_text, tokenizer).to(device),
+        max_new_tokens=35,
+        context_size=use_config["context_length"],
+        eos_id=50256
+    )
+    print(token_ids_to_text(token_ids, tokenizer)[len(input_text):])
 
-with torch.no_grad():
-    train_loss = calc_loss_loader(train_loader, model, device, num_batches=5)
-    val_loss = calc_loss_loader(val_loader, model, device, num_batches=5)
-    test_loss = calc_loss_loader(test_loader, model, device, num_batches=5)
+    with torch.no_grad():
+        train_loss = calc_loss_loader(train_loader, model, device, num_batches=5)
+        val_loss = calc_loss_loader(val_loader, model, device, num_batches=5)
+        test_loss = calc_loss_loader(test_loader, model, device, num_batches=5)
 
-print("Train loss:", train_loss)
-print("Validation loss:", val_loss)
-print("Test loss:", test_loss)
+    print("Train loss:", train_loss)
+    print("Validation loss:", val_loss)
+    print("Test loss:", test_loss)
 
-start_time = time.time()
+    start_time = time.time()
 
-model.train()
+    model.train()
 
-train_losses, val_losses, tokens_seen = train_model_simple(
-    model, train_loader, val_loader, optimizer, device,
-    num_epochs=num_epochs,
-    eval_freq=50,
-    eval_iter=5,
-    start_context=format_input(val_data[0]),
-    tokenizer=tokenizer,
-)
+    def save_checkpoint(epoch):
+        torch.save({
+            "model": model.state_dict(),
+            "optimizer": optimizer.state_dict(),
+            "scaler": scaler.state_dict(),
+        }, checkpoint_path)
+        print(f"Checkpoint saved after epoch {epoch + 1}: {checkpoint_path}")
 
-end_time = time.time()
-duration_minutes = (end_time - start_time) / 60
-print(f"Training completed in {duration_minutes:.2f} minutes.")
+    train_losses, val_losses, tokens_seen = train_model_autocast(
+        model, train_loader, val_loader, optimizer, device,
+        num_epochs=num_epochs,
+        eval_freq=50,
+        eval_iter=5,
+        start_context=format_input(val_data[0]),
+        tokenizer=tokenizer,
+        scaler=scaler,
+        epoch_callback=save_checkpoint,
+    )
 
-with torch.no_grad():
-    train_loss = calc_loss_loader(train_loader, model, device, num_batches=5)
-    val_loss = calc_loss_loader(val_loader, model, device, num_batches=5)
-    test_loss = calc_loss_loader(test_loader, model, device, num_batches=5)
+    end_time = time.time()
+    duration_minutes = (end_time - start_time) / 60
+    print(f"Training completed in {duration_minutes:.2f} minutes.")
 
-epochs_tensor = torch.linspace(0, num_epochs, len(train_losses))
+    with torch.no_grad():
+        train_loss = calc_loss_loader(train_loader, model, device, num_batches=5)
+        val_loss = calc_loss_loader(val_loader, model, device, num_batches=5)
+        test_loss = calc_loss_loader(test_loader, model, device, num_batches=5)
 
-print("Train loss:", train_loss)
-print("Validation loss:", val_loss)
-print("Test loss:", test_loss)
+    epochs_tensor = torch.linspace(0, num_epochs, len(train_losses))
 
-torch.save(model.state_dict(), model_output_path)
+    print("Train loss:", train_loss)
+    print("Validation loss:", val_loss)
+    print("Test loss:", test_loss)
 
-print("Model saved:", model_output_path)
+    torch.save(model.state_dict(), model_output_path)
 
-torch.save({
-    "model": model.state_dict(),
-    "optimizer": optimizer.state_dict()
-}, checkpoint_path)
+    print("Model saved:", model_output_path)
 
-print("Checkpoint saved:", checkpoint_path)
+    torch.save({
+        "model": model.state_dict(),
+        "optimizer": optimizer.state_dict(),
+        "scaler": scaler.state_dict(),
+    }, checkpoint_path)
 
-plot_losses(epochs_tensor, tokens_seen, train_losses, val_losses, save_figure=True)
+    print("Checkpoint saved:", checkpoint_path)
+
+    # Verify checkpoint round-trip: reload and check loss matches
+    verify_model = GPTModel(use_config).to(device)
+    verify_checkpoint = torch.load(checkpoint_path, map_location=device)
+    verify_model.load_state_dict(verify_checkpoint["model"])
+    with torch.no_grad():
+        verify_loss = calc_loss_loader(val_loader, verify_model, device, num_batches=5)
+    print(f"Verification loss after reload: {verify_loss:.3f} (should match validation loss above)")
+    del verify_model, verify_checkpoint
+
+    plot_losses(epochs_tensor, tokens_seen, train_losses, val_losses, save_figure=True, show=False)

@@ -24,6 +24,8 @@ val_data = text_data[split_idx:]
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+pin_memory = device.type == "cuda"
+
 train_loader = create_dataloader_v1(
     train_data,
     batch_size=2,
@@ -31,7 +33,8 @@ train_loader = create_dataloader_v1(
     stride=use_config["context_length"],
     drop_last=True,
     shuffle=True,
-    num_workers=0
+    num_workers=0,
+    pin_memory=pin_memory,
 )
 val_loader = create_dataloader_v1(
     val_data,
@@ -40,7 +43,8 @@ val_loader = create_dataloader_v1(
     stride=use_config["context_length"],
     drop_last=True,
     shuffle=True,
-    num_workers=0
+    num_workers=0,
+    pin_memory=pin_memory,
 )
 
 torch.manual_seed(42)

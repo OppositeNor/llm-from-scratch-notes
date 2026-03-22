@@ -35,8 +35,9 @@ pretrained_model_path = f"models/model_pretrain_{model_size}.pth"
 dataset_path = "instruction-data.json"
 num_epochs = 6
 
-num_workers = 0
+num_workers = 4
 batch_size = 8
+pin_memory = device.type == "cuda"
 
 if load_checkpoint and os.path.exists(checkpoint_path):
     model = GPTModel(use_config).to(device)
@@ -79,7 +80,7 @@ def prepare_dataset():
 def prepare_dataloaders():
     print(f"Loading dataset {dataset_path}...")
     train_dataset, val_dataset, test_dataset, val_data = prepare_dataset()
-    custom_collate_fn = partial(custom_collate, device=device, allowed_max_length=use_config["context_length"])
+    custom_collate_fn = partial(custom_collate, allowed_max_length=use_config["context_length"])
 
     print("Preparing dataloaders...")
     train_loader = DataLoader(
@@ -88,7 +89,9 @@ def prepare_dataloaders():
         collate_fn=custom_collate_fn,
         shuffle=True,
         drop_last=True,
-        num_workers=num_workers
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        persistent_workers=num_workers > 0,
     )
 
     val_loader = DataLoader(
@@ -97,7 +100,9 @@ def prepare_dataloaders():
         collate_fn=custom_collate_fn,
         shuffle=False,
         drop_last=False,
-        num_workers=num_workers
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        persistent_workers=num_workers > 0,
     )
 
     test_loader = DataLoader(
@@ -106,7 +111,9 @@ def prepare_dataloaders():
         collate_fn=custom_collate_fn,
         shuffle=False,
         drop_last=False,
-        num_workers=num_workers
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        persistent_workers=num_workers > 0,
     )
     return train_loader, val_loader, test_loader, val_data
 
@@ -136,6 +143,14 @@ start_time = time.time()
 
 model.train()
 
+def save_checkpoint(epoch):
+    torch.save({
+        "model": model.state_dict(),
+        "optimizer": optimizer.state_dict(),
+        "scaler": scaler.state_dict(),
+    }, checkpoint_path)
+    print(f"Checkpoint saved after epoch {epoch + 1}: {checkpoint_path}")
+
 train_losses, val_losses, tokens_seen = train_model_autocast(
     model, train_loader, val_loader, optimizer, device,
     num_epochs=num_epochs,
@@ -144,6 +159,7 @@ train_losses, val_losses, tokens_seen = train_model_autocast(
     start_context=format_input(val_data[0]),
     tokenizer=tokenizer,
     scaler=scaler,
+    epoch_callback=save_checkpoint,
 )
 
 end_time = time.time()

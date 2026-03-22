@@ -73,7 +73,7 @@ inputs_tensor, targets_tensor = custom_collate_draft_v2(batch, device="cpu")
 print(inputs_tensor)
 print(targets_tensor)
 
-inputs_tensor, targets_tensor = custom_collate(batch, device=torch.device("cpu"))
+inputs_tensor, targets_tensor = custom_collate(batch)
 print(inputs_tensor)
 print(targets_tensor)
 
@@ -110,7 +110,7 @@ if device == torch.device("cpu"):
         print(f"CPU count: {cpu_count}")
 print("Using device:", device)
 
-custom_collate_fn = partial(custom_collate, device=device, allowed_max_length=use_config["context_length"])
+custom_collate_fn = partial(custom_collate, allowed_max_length=use_config["context_length"])
 
 num_workers = 0
 batch_size = 8

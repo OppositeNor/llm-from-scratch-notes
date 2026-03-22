@@ -1,8 +1,10 @@
 from tqdm import tqdm
 import torch
+import torch.nn.functional as F
 import tiktoken
 import pandas as pd
 from torch.utils.data import Dataset, DataLoader
+from torch.nn.utils.rnn import pad_sequence
 
 from utils import format_input, format_response
 
@@ -69,45 +71,45 @@ class InstructionDataset(Dataset):
         self.encoded_texts = []
         for entry in tqdm(data):
             instruction_input = format_input(entry) + format_response(entry)
-            self.encoded_texts.append(tokenizer.encode(instruction_input))
+            self.encoded_texts.append(
+                torch.tensor(tokenizer.encode(instruction_input), dtype=torch.long)
+            )
+
     def __getitem__(self, index):
         return self.encoded_texts[index]
 
     def __len__(self):
         return len(self.data)
 
-def create_dataloader_v1(txt, batch_size=4, max_length=256, stride=128, shuffle=True, drop_last=True, num_workers=0):
+def create_dataloader_v1(txt, batch_size=4, max_length=256, stride=128, shuffle=True, drop_last=True, num_workers=0, pin_memory=False):
     tokenizer = tiktoken.get_encoding("gpt2")
     dataset = GPTDatasetV1(txt, tokenizer, max_length, stride)
     dataloader = DataLoader(
         dataset,
         batch_size=batch_size,
         shuffle=shuffle,
-        drop_last=drop_last, # Drops the last batch if shorter than batch_size
-        num_workers=num_workers
+        drop_last=drop_last,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
     )
     return dataloader
 
-def custom_collate(batch, pad_token_id=50256, ignore_index=-100, allowed_max_length=None, device=torch.device("cpu")):
-    batch_max_length = max(len(item) for item in batch)
-    inputs_list, targets_list = [], []
-    for item in batch:
-        padded = item + [pad_token_id] * (batch_max_length - len(item))
-        inputs = torch.tensor(padded)
-        targets = torch.tensor(padded[1:] + [pad_token_id])
+def custom_collate(batch, pad_token_id=50256, ignore_index=-100, allowed_max_length=None):
+    batch_tensors = [torch.as_tensor(item, dtype=torch.long) for item in batch]
 
-        # Mask out the second to last padding tokens to -100, to exclude from loss calculations.
-        # cross_entropy ignores targets labeled -100 by default.
-        mask = targets == pad_token_id
-        indices = torch.nonzero(mask).squeeze()
-        if indices.numel() > 1:
-            targets[indices[1:]] = ignore_index
+    padded = pad_sequence(batch_tensors, batch_first=True, padding_value=pad_token_id)
+    # Extra column so the longest sequence still has a next-token target
+    padded = F.pad(padded, (0, 1), value=pad_token_id)
 
-        if allowed_max_length is not None:
-            inputs = inputs[:allowed_max_length]
-            targets = targets[:allowed_max_length]
-        inputs_list.append(inputs)
-        targets_list.append(targets)
-    inputs_tensor = torch.stack(inputs_list).to(device)
-    targets_tensor = torch.stack(targets_list).to(device)
-    return inputs_tensor, targets_tensor
+    if allowed_max_length is not None:
+        padded = padded[:, :allowed_max_length + 1]
+
+    inputs = padded[:, :-1]
+    targets = padded[:, 1:].clone()
+
+    # Keep the first pad_token per sequence (EOS signal), mask subsequent padding.
+    # cross_entropy ignores targets labeled ignore_index (-100) by default.
+    pad_cumsum = (targets == pad_token_id).long().cumsum(dim=1)
+    targets[pad_cumsum > 1] = ignore_index
+
+    return inputs, targets

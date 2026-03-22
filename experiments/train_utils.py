@@ -6,8 +6,8 @@ from gpt_model import generate_text_simple
 from utils import text_to_token_ids, token_ids_to_text
 
 def calc_loss_batch(input_batch, target_batch, model, device):
-    input_batch = input_batch.to(device) # Moving the tensor to the corresponding device
-    target_batch = target_batch.to(device)
+    input_batch = input_batch.to(device, non_blocking=True)
+    target_batch = target_batch.to(device, non_blocking=True)
     logits = model(input_batch)
     loss = torch.nn.functional.cross_entropy(
         logits.flatten(0, 1), target_batch.flatten()
@@ -15,8 +15,8 @@ def calc_loss_batch(input_batch, target_batch, model, device):
     return loss
 
 def calc_loss_batch_last(input_batch, target_batch, model, device):
-    input_batch = input_batch.to(device) # Moving the tensor to the corresponding device
-    target_batch = target_batch.to(device)
+    input_batch = input_batch.to(device, non_blocking=True)
+    target_batch = target_batch.to(device, non_blocking=True)
     logits = model(input_batch)[:, -1, :]
     loss = torch.nn.functional.cross_entropy(
         logits, target_batch
@@ -93,7 +93,7 @@ def generate_and_print_simple(model, tokenizer, device, start_context):
     print(decode_text.replace("\n", " "))
     model.train()
 
-def train_model_simple(model, train_loader, val_loader, optimizer, device, num_epochs, eval_freq, eval_iter, start_context, tokenizer):
+def train_model_simple(model, train_loader, val_loader, optimizer, device, num_epochs, eval_freq, eval_iter, start_context, tokenizer, epoch_callback=None, max_grad_norm=1.0):
     train_losses = []
     val_losses = []
     track_tokens_seen = []
@@ -107,7 +107,9 @@ def train_model_simple(model, train_loader, val_loader, optimizer, device, num_e
         for input_batch, target_batch, in train_loader:
             optimizer.zero_grad() # Reset gradients
             loss = calc_loss_batch(input_batch, target_batch, model, device)
-            loss.backward()  # Back prop to get the gradients
+            loss.backward() # Back prop to get the gradients
+            if max_grad_norm is not None:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_grad_norm)
             optimizer.step() # Update the weights with the optimizer
             tokens_seen += input_batch.numel()
             global_step += 1
@@ -128,9 +130,11 @@ def train_model_simple(model, train_loader, val_loader, optimizer, device, num_e
         generate_and_print_simple(
             model, tokenizer, device, start_context
         )
+        if epoch_callback is not None:
+            epoch_callback(epoch)
     return train_losses, val_losses, track_tokens_seen
 
-def train_model_accelerate(model, train_loader, val_loader, optimizer, device, num_epochs, eval_freq, eval_iter, start_context, tokenizer, accelerator):
+def train_model_accelerate(model, train_loader, val_loader, optimizer, device, num_epochs, eval_freq, eval_iter, start_context, tokenizer, accelerator, epoch_callback=None, max_grad_norm=1.0):
     train_losses = []
     val_losses = []
     track_tokens_seen = []
@@ -144,7 +148,9 @@ def train_model_accelerate(model, train_loader, val_loader, optimizer, device, n
         for input_batch, target_batch, in train_loader:
             optimizer.zero_grad() # Reset gradients
             loss = calc_loss_batch(input_batch, target_batch, model, device)
-            accelerator.backward(loss)  # Back prop the accelerator to get the gradients
+            accelerator.backward(loss) # Back prop the accelerator to get the gradients
+            if max_grad_norm is not None:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_grad_norm)
             optimizer.step() # Update the weights with the optimizer
             tokens_seen += input_batch.numel()
             global_step += 1
@@ -165,9 +171,11 @@ def train_model_accelerate(model, train_loader, val_loader, optimizer, device, n
         generate_and_print_simple(
             model, tokenizer, device, start_context
         )
+        if epoch_callback is not None:
+            epoch_callback(epoch)
     return train_losses, val_losses, track_tokens_seen
 
-def train_model_autocast(model, train_loader, val_loader, optimizer, device, num_epochs, eval_freq, eval_iter, start_context, tokenizer, scaler):
+def train_model_autocast(model, train_loader, val_loader, optimizer, device, num_epochs, eval_freq, eval_iter, start_context, tokenizer, scaler, epoch_callback=None, max_grad_norm=1.0):
     train_losses = []
     val_losses = []
     track_tokens_seen = []
@@ -176,35 +184,40 @@ def train_model_autocast(model, train_loader, val_loader, optimizer, device, num
     total_steps = num_epochs * len(train_loader)
     print("Total steps:", total_steps)
     prev_time = time.time()
-    with torch.autocast(device_type=str(device)):
-        for epoch in range(num_epochs):
-            model.train()
-            for input_batch, target_batch, in train_loader:
-                optimizer.zero_grad() # Reset gradients
+    for epoch in range(num_epochs):
+        model.train()
+        for input_batch, target_batch, in train_loader:
+            optimizer.zero_grad() # Reset gradients
+            with torch.autocast(device_type=device.type):
                 loss = calc_loss_batch(input_batch, target_batch, model, device)
-                scaler.scale(loss).backward()  # Back prop to get the gradients
-                scaler.step(optimizer) # Update the weights with the optimizer
-                scaler.update()
-                tokens_seen += input_batch.numel()
-                global_step += 1
+            scaler.scale(loss).backward() # Back prop to get the gradients
+            scaler.unscale_(optimizer) # Unscale gradients for clipping
+            if max_grad_norm is not None:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_grad_norm)
+            scaler.step(optimizer) # Update the weights with the optimizer
+            scaler.update()
+            tokens_seen += input_batch.numel()
+            global_step += 1
 
-                if global_step % eval_freq == 0:
-                    duration = time.time() - prev_time
-                    exp_finish = ((total_steps - global_step) / eval_freq) * duration / 60
-                    prev_time = time.time()
-                    # Evaluation
-                    train_loss, val_loss = evaluate_model(model, train_loader, val_loader, device, eval_iter)
-                    train_losses.append(train_loss)
-                    val_losses.append(val_loss)
-                    track_tokens_seen.append(tokens_seen)
-                    print(f"Ep {epoch+1} (Step {global_step:06d}): "
-                        f"Train loss {train_loss:3f}"
-                        f" Val loss {val_loss:3f} Expecting to finish in {exp_finish:.2f} minutes")
-            # Print a sample text after each epoch
-            generate_and_print_simple(
-                model, tokenizer, device, start_context
-            )
-        return train_losses, val_losses, track_tokens_seen
+            if global_step % eval_freq == 0:
+                duration = time.time() - prev_time
+                exp_finish = ((total_steps - global_step) / eval_freq) * duration / 60
+                prev_time = time.time()
+                # Evaluation
+                train_loss, val_loss = evaluate_model(model, train_loader, val_loader, device, eval_iter)
+                train_losses.append(train_loss)
+                val_losses.append(val_loss)
+                track_tokens_seen.append(tokens_seen)
+                print(f"Ep {epoch+1} (Step {global_step:06d}): "
+                    f"Train loss {train_loss:3f}"
+                    f" Val loss {val_loss:3f} Expecting to finish in {exp_finish:.2f} minutes")
+        # Print a sample text after each epoch
+        generate_and_print_simple(
+            model, tokenizer, device, start_context
+        )
+        if epoch_callback is not None:
+            epoch_callback(epoch)
+    return train_losses, val_losses, track_tokens_seen
 
 def calc_accuracy_loader(data_loader, model, device, num_batches=None):
     model.eval()
@@ -217,8 +230,8 @@ def calc_accuracy_loader(data_loader, model, device, num_batches=None):
     
     for i, (input_batch, target_batch) in enumerate(data_loader):
         if i < num_batches:
-            input_batch = input_batch.to(device)
-            target_batch = target_batch.to(device)
+            input_batch = input_batch.to(device, non_blocking=True)
+            target_batch = target_batch.to(device, non_blocking=True)
 
             with torch.no_grad():
                 logits = model(input_batch)[:, -1, :]
